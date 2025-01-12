@@ -36,6 +36,21 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	// Check if the user already exists in the database
+	collection := config.MongoDB.Collection("users")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var existingUser models.User
+	err := collection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&existingUser)
+	if err == nil {
+		// User already exists
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error": "User already registered. Please log in.",
+		})
+	}
+
+	// Proceed only if the user is not already registered
 	// Hash the password before saving it to the database
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -47,10 +62,6 @@ func Register(c *fiber.Ctx) error {
 	user.Password = string(hashedPassword)
 
 	// Save the user to the MongoDB collection
-	collection := config.MongoDB.Collection("users")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	_, err = collection.InsertOne(ctx, user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
